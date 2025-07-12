@@ -36,7 +36,7 @@ vault write -format=json pki_root_ca/root/generate/internal \
     issuer_name="pki_root_ca_2024" \
     country="Russian Federation" \
     locality="Moscow" \
-    organization="Magnit Tech" \
+    organization="MyCompany" \
     ou="Apatsev" \
     ttl="131400h" > pki-root-ca.json
 
@@ -77,7 +77,7 @@ vault write -format=json pki_int_ca/intermediate/generate/internal \
    issuer_name="pki_intermediate_2024" \
    country="Russian Federation" \
    locality="Moscow" \
-   organization="Magnit Tech" \
+   organization="MyCompany" \
    ou="Apatsev" \
    ttl="43800h" | jq -r '.data.csr' > pki_intermediate_ca.csr
 
@@ -90,7 +90,7 @@ vault write -format=json pki_root_ca/root/sign-intermediate csr=@pki_intermediat
    issuer_ref="pki_root_ca_2024" \
    country="Russian Federation" \
    locality="Moscow" \
-   organization="Magnit Tech" \
+   organization="MyCompany" \
    ou="Apatsev" \
    format=pem_bundle \
    ttl="43800h" | jq -r '.data.certificate' > intermediateCA.cert.pem
