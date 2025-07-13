@@ -38,7 +38,8 @@ terraform.rc
 .idea
 .terraform.lock.hcl
 vault-init-keys.json
-/pki-root-ca.json
-/rootCA.pem
-/vault-certificate.yaml
-/vault-issuer.yaml
+pki-root-ca.json
+rootCA.pem
+vault-certificate.yaml
+vault-issuer.yaml
+vault-helm
