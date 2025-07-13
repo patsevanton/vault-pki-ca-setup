@@ -36,4 +36,9 @@ override.tf.json
 .terraformrc
 terraform.rc
 .idea
-/.terraform.lock.hcl
+.terraform.lock.hcl
+vault-init-keys.json
+/pki-root-ca.json
+/rootCA.pem
+/vault-certificate.yaml
+/vault-issuer.yaml
