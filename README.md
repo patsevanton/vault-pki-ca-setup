@@ -1,68 +1,52 @@
-### **Инструкция по настройке Удостоверяющего Центра (CA) на базе HashiCorp Vault**
+### **Инструкция по настройке Удостоверяющего Центра (CA) на базе HashiCorp Vault и OpenSSL**
 
-Эта инструкция описывает процесс создания двухуровневой инфраструктуры открытых ключей (PKI) с помощью Vault. Мы настроим:
-1.  **Корневой Удостоверяющий Центр (Root CA)**: Самоподписанный центр, который является корнем доверия для всей вашей инфраструктуры.
-2.  **Промежуточный Удостоверяющий Центр (Intermediate CA)**: Центр, подписанный Root CA, который будет использоваться для выпуска сертификатов для конечных пользователей и сервисов.
+Эта инструкция описывает процесс создания гибридной двухуровневой инфраструктуры открытых ключей (PKI). Мы настроим:
+1.  **Корневой Удостоверяющий Центр (Root CA)**: Самоподписанный центр `apatsev.corp`, созданный через OpenSSL, который является корнем доверия для всей инфраструктуры.
+2.  **Промежуточный Удостоверяющий Центр (Intermediate CA)**: Центр `intermediate.apatsev.corp`, подписанный корневым CA, который будет использоваться для выпуска сертификатов для конечных пользователей и сервисов через Vault.
 
 **Предварительные требования:**
 *   Установленный и инициализированный (unsealed) экземпляр HashiCorp Vault.
 *   Установленный `vault` CLI и настроенное подключение к вашему серверу Vault (через переменные окружения `VAULT_ADDR` и `VAULT_TOKEN`).
 *   Установленная утилита `jq` для удобной обработки JSON-вывода.
+*   Установленная утилита `openssl` для создания корневого сертификата.
 
----
 
-### **Шаг 1: Настройка Корневого Удостоверяющего Центра (Root CA)**
+Шаг 0. Установить Kubernetes
 
-На этом шаге мы создадим корневой центр сертификации. Его ключ будет использоваться только для подписания промежуточных центров, что повышает общую безопасность системы.
+### **Шаг 1: Создание корневого сертификата apatsev.corp через OpenSSL**
+
+На этом шаге мы создадим корневой сертификат `apatsev.corp` с помощью OpenSSL. Это будет корень доверия для всей инфраструктуры.
 
 ```bash
-# 1. Включаем секретный движок PKI для корневого CA.
-# Мы указываем путь `pki_root_ca`, чтобы отличать его от других PKI-движков.
-# `max-lease-ttl` определяет максимальный срок жизни для сертификатов, выпускаемых этим CA.
-# Для корневого CA устанавливается очень большой срок, например, 15 лет (131400 часов).
-vault secrets enable \
-    -path=pki_root_ca \
-    -description="Apatsev PKI Root CA" \
-    -max-lease-ttl="131400h" \
-    pki
+# 1. Создаем приватный ключ для корневого CA.
+# Используем длину ключа 4096 бит для повышенной безопасности.
+openssl genrsa -out rootCA.key 4096
 
-# 2. Генерируем корневой сертификат.
-# Это будет самоподписанный сертификат, который станет корнем доверия.
-# `common_name` - это общее имя, которое будет отображаться в информации о сертификате.
-# `ttl` соответствует максимальному сроку жизни, установленному ранее.
-# Результат выполнения команды сохраняется в файл pki-root-ca.json.
-vault write -format=json pki_root_ca/root/generate/internal \
-    common_name="Apatsev Root Certificate Authority" \
-    issuer_name="pki_root_ca_2024" \
-    country="Russian Federation" \
-    locality="Moscow" \
-    organization="MyCompany" \
-    ou="Apatsev" \
-    ttl="131400h" > pki-root-ca.json
+# 2. Создаем самоподписанный корневой сертификат.
+# Срок жизни устанавливаем 10 лет (3650 дней).
+# `-subj` задает параметры субъекта сертификата.
+openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 3650 \
+  -out rootCA.crt \
+  -subj "/C=RU/ST=Moscow/L=Moscow/O=MyCompany/OU=Apatsev/CN=apatsev.corp Root CA"
 
-# 3. Настраиваем URL-адреса для точек распространения списка отзыва (CRL) и для доступа к сертификату CA.
-# Эти URL будут встроены в сертификаты, выпускаемые этим CA.
-# Замените `https://vault.apatsev.corp` на реальный адрес вашего Vault сервера.
-vault write pki_root_ca/config/urls \
-    issuing_certificates="https://vault.apatsev.corp/v1/pki_root_ca/ca" \
-    crl_distribution_points="https://vault.apatsev.corp/v1/pki_root_ca/crl"
+# 3. Проверяем созданные файлы.
+# Убедитесь, что файлы `rootCA.key` и `rootCA.crt` созданы успешно.
+ls -la rootCA.key rootCA.crt
 
-# 4. Извлекаем публичную часть корневого сертификата в формате PEM.
-# Этот файл `rootCA.pem` нужно будет распространить на все машины,
-# которые должны доверять сертификатам, выпущенным в вашей инфраструктуре.
-cat pki-root-ca.json | jq -r .data.certificate > rootCA.pem
+# 4. Проверяем содержимое корневого сертификата.
+# Убедитесь, что сертификат содержит правильное общее имя.
+openssl x509 -in rootCA.crt -text -noout | grep "Subject:"
 ```
 
----
 
-### **Шаг 2: Настройка Промежуточного Удостоверяющего Центра (Intermediate CA)**
+### **Шаг 2: Настройка Промежуточного Удостоверяющего Центра intermediate.apatsev.corp в Vault**
 
-Теперь, когда у нас есть корневой CA, мы создадим промежуточный CA. Именно он будет использоваться для повседневных задач по выпуску сертификатов.
+Теперь, когда у нас есть корневой сертификат `apatsev.corp`, созданный через OpenSSL, мы настроим промежуточный CA `intermediate.apatsev.corp` в Vault.
 
 ```bash
-# 1. Включаем еще один секретный движок PKI для промежуточного CA.
-# Используем отдельный путь `pki_int_ca`.
-# Срок жизни сертификатов здесь меньше, чем у корневого, например, 5 лет (43800 часов).
+# 1. Включаем секретный движок PKI для промежуточного CA.
+# Используем путь `pki_int_ca`.
+# Срок жизни сертификатов устанавливаем 5 лет (43800 часов).
 vault secrets enable \
     -path=pki_int_ca \
     -description="Apatsev PKI Intermediate CA" \
@@ -73,7 +57,7 @@ vault secrets enable \
 # На этом этапе создается приватный ключ внутри Vault и CSR, который мы передадим корневому CA для подписи.
 # Сохраняем CSR в файл `pki_intermediate_ca.csr`.
 vault write -format=json pki_int_ca/intermediate/generate/internal \
-   common_name="Apatsev Intermediate CA" \
+   common_name="intermediate.apatsev.corp" \
    issuer_name="pki_intermediate_2024" \
    country="Russian Federation" \
    locality="Moscow" \
@@ -81,28 +65,25 @@ vault write -format=json pki_int_ca/intermediate/generate/internal \
    ou="Apatsev" \
    ttl="43800h" | jq -r '.data.csr' > pki_intermediate_ca.csr
 
-# 3. Подписываем CSR промежуточного CA с помощью корневого CA.
-# Мы используем эндпоинт `pki_root_ca/root/sign-intermediate` и передаем ему CSR.
-# `format=pem_bundle` гарантирует, что мы получим сертификат в нужном формате.
-# `ttl` определяет срок действия промежуточного сертификата.
-# Сохраняем подписанный сертификат в файл `intermediateCA.cert.pem`.
-vault write -format=json pki_root_ca/root/sign-intermediate csr=@pki_intermediate_ca.csr \
-   issuer_ref="pki_root_ca_2024" \
-   country="Russian Federation" \
-   locality="Moscow" \
-   organization="MyCompany" \
-   ou="Apatsev" \
-   format=pem_bundle \
-   ttl="43800h" | jq -r '.data.certificate' > intermediateCA.cert.pem
+# 3. Подписываем CSR промежуточного CA с помощью корневого сертификата OpenSSL.
+# Используем OpenSSL для подписи CSR корневым сертификатом.
+# Сохраняем подписанный сертификат в файл `intermediateCA.cert.crt`.
+openssl x509 -req -in pki_intermediate_ca.csr \
+  -CA rootCA.crt \
+  -CAkey rootCA.key \
+  -CAcreateserial \
+  -out intermediateCA.cert.crt \
+  -days 1825 \
+  -sha256
 
 # 4. Загружаем подписанный сертификат обратно в движок промежуточного CA.
 # Эта команда связывает ранее сгенерированный приватный ключ с публичным сертификатом,
 # подписанным корневым CA. После этого промежуточный CA готов к работе.
 vault write pki_int_ca/intermediate/set-signed \
-    certificate=@intermediateCA.cert.pem
+    certificate=@intermediateCA.cert.crt
 
 # 5. Настраиваем URL-адреса для CRL и AIA промежуточного CA.
-# Аналогично корневому CA, замените `https://vault.apatsev.corp` на ваш реальный адрес Vault.
+# Замените `https://vault.apatsev.corp` на ваш реальный адрес Vault.
 vault write pki_int_ca/config/urls \
     issuing_certificates="https://vault.apatsev.corp/v1/pki_int_ca/ca" \
     crl_distribution_points="https://vault.apatsev.corp/v1/pki_int_ca/crl"
@@ -112,11 +93,11 @@ vault write pki_int_ca/config/urls \
 
 ### **Шаг 3: Создание Роли для Выпуска Сертификатов**
 
-Роль в Vault PKI определяет параметры и ограничения для сертификатов, которые могут быть выпущены. Мы создадим роль для домена `apatsev.corp`.
+Роль в Vault PKI определяет параметры и ограничения для сертификатов, которые могут быть выпущены. Мы создадим роль для домена `apatsev.corp` через промежуточный CA `intermediate.apatsev.corp`.
 
 ```bash
 # Создаем роль с именем `apatsev-dot-corp`.
-# Эта роль позволит генерировать сертификаты для домена `apatsev.corp` и его поддоменов.
+# Эта роль позволит генерировать сертификаты для домена `apatsev.corp` и его поддоменов через промежуточный CA.
 vault write pki_int_ca/roles/apatsev-dot-corp \
     # Разрешенные домены для выпуска сертификатов.
     allowed_domains="apatsev.corp" \
@@ -158,7 +139,7 @@ vault write pki_int_ca/roles/apatsev-dot-corp \
 
 ### **Шаг 4: Пример Выпуска Сертификата**
 
-Теперь, когда вся иерархия и роль настроены, мы можем выпустить наш первый сертификат.
+Теперь, когда вся иерархия настроена (корневой CA через OpenSSL и промежуточный CA в Vault), мы можем выпустить наш первый сертификат через промежуточный CA `intermediate.apatsev.corp`.
 
 ```bash
 # 1. Выпускаем сертификат для сервера `test.apatsev.corp`.
@@ -175,18 +156,18 @@ vault write -format=json pki_int_ca/issue/apatsev-dot-corp \
 # Сохраняем сертификат, приватный ключ и цепочку сертификатов в отдельные файлы.
 
 # Сохраняем сертификат сервера.
-cat test.apatsev.corp.json | jq -r .data.certificate > test.apatsev.corp.crt.pem
+cat test.apatsev.corp.json | jq -r .data.certificate > test.apatsev.corp.crt.crt
 
 # Сохраняем приватный ключ сервера.
 cat test.apatsev.corp.json | jq -r .data.private_key > test.apatsev.corp.crt.key
 
 # Сохраняем сертификат промежуточного CA (цепочка доверия).
-cat test.apatsev.corp.json | jq -r .data.issuing_ca >> test.apatsev.corp.crt.pem
+cat test.apatsev.corp.json | jq -r .data.issuing_ca >> test.apatsev.corp.crt.crt
 
 # Теперь у вас есть 3 файла:
-# - test.apatsev.corp.crt.pem: Полная цепочка сертификатов (сертификат сервера + промежуточный CA).
+# - test.apatsev.corp.crt.crt: Полная цепочка сертификатов (сертификат сервера + промежуточный CA).
 # - test.apatsev.corp.crt.key: Приватный ключ для вашего сервера.
-# - rootCA.pem: Корневой сертификат, который должен быть установлен на клиентах.
+# - rootCA.crt: Корневой сертификат, созданный через OpenSSL, который должен быть установлен на клиентах.
 ```
 
 На этом настройка удостоверяющего центра завершена. Вы можете создавать дополнительные роли с другими ограничениями и выпускать сертификаты для всех ваших сервисов.

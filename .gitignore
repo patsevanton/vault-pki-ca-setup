@@ -43,3 +43,5 @@ rootCA.pem
 vault-certificate.yaml
 vault-issuer.yaml
 vault-helm
+rootCA.crt
+rootCA.key
