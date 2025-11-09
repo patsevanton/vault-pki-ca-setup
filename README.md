@@ -237,8 +237,16 @@ openssl req -in intermediate.csr -text -noout
 ```bash
 cat <<EOF > intermediate_ext.cnf
 [ v3_ca ]
-basicConstraints = critical, CA:TRUE, pathlen:1
+# Пометить сертификат как CA
+# pathlen:0 - запрещает промежуточному CA выпускать дополнительные подчиненные CA, повышая безопасность.
+basicConstraints = critical, CA:TRUE, pathlen:0
+
+# Указать назначение ключа (знак — подпись сертификатов и CRL)
 keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+
+# Идентификаторы ключей
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid,issuer
 EOF
 ```
 
