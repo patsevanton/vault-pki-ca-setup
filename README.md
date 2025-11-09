@@ -232,7 +232,17 @@ vault write -format=json pki/intermediate/generate/internal \
 openssl req -in intermediate.csr -text -noout
 ```
 
-3. Подписываем CSR промежуточного CA с помощью корневого сертификата OpenSSL:
+3. Создаем файл конфигурации расширений intermediate_ext.cnf:
+
+```bash
+cat <<EOF > intermediate_ext.cnf
+[ v3_ca ]
+basicConstraints = critical, CA:TRUE, pathlen:1
+keyUsage = critical, digitalSignature, cRLSign, keyCertSign
+EOF
+```
+
+4. Подписываем CSR промежуточного CA с помощью корневого сертификата OpenSSL, включая расширения:
 
 ```bash
 openssl x509 -req -in intermediate.csr \
@@ -241,10 +251,13 @@ openssl x509 -req -in intermediate.csr \
   -CAcreateserial \
   -out intermediate.crt \
   -days 1825 \
-  -sha256
+  -sha256 \
+  -extfile intermediate_ext.cnf \
+  -extensions v3_ca
 ```
-**Проверка:** Просмотр краткой информации и проверка цепочки сертификатов.
+**Проверка:** Просмотр краткой информации, расширений и проверка цепочки сертификатов.
 ```bash
+openssl x509 -in intermediate.crt -text -noout
 openssl x509 -in intermediate.crt -subject -issuer -dates -noout
 openssl verify -CAfile rootCA.crt intermediate.crt
 ```
