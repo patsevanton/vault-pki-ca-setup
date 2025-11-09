@@ -47,3 +47,6 @@ rootCA.crt
 rootCA.key
 default-values.yaml
 diff.txt
+intermediate.crt
+intermediate.csr
+rootCA.srl
