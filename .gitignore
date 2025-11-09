@@ -45,3 +45,4 @@ vault-issuer.yaml
 vault-helm
 rootCA.crt
 rootCA.key
+default-values.yaml
