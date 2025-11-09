@@ -104,17 +104,26 @@ kubectl exec -n vault vault-0 -- vault status
 Присоединение остальных нод К ПЕРВОЙ ноде
 bash
 # vault-1 присоединяется к vault-0
+```bash
 kubectl exec -n vault vault-1 -- vault operator raft join http://vault-0.vault-internal:8200
+```
 
-# vault-2 присоединяется к vault-0  
+# vault-2 присоединяется к vault-0
+```bash
 kubectl exec -n vault vault-2 -- vault operator raft join http://vault-0.vault-internal:8200
-Распечатать все ноды
-bash
-# Распечатать vault-1
-kubectl exec -n vault vault-1 -- vault operator unseal ${VAULT_UNSEAL_KEY}
+```
 
-# Распечатать vault-2
+Распечатать все ноды
+
+Распечатать vault-1
+```bash
+kubectl exec -n vault vault-1 -- vault operator unseal ${VAULT_UNSEAL_KEY}
+```
+
+Распечатать vault-2
+```bash
 kubectl exec -n vault vault-2 -- vault operator unseal ${VAULT_UNSEAL_KEY}
+```
 
 **Проверка:** Проверьте статус Vault внутри пода.
 ```bash
