@@ -102,7 +102,7 @@ kubectl exec -n vault vault-0 -- vault status
 
 
 Присоединение остальных нод К ПЕРВОЙ ноде
-bash
+```bash
 # vault-1 присоединяется к vault-0
 ```bash
 kubectl exec -n vault vault-1 -- vault operator raft join http://vault-0.vault-internal:8200
@@ -227,9 +227,9 @@ vault write -format=json pki/intermediate/generate/internal \
     ou="Apatsev" \
     ttl="43800h" | jq -r '.data.csr' > intermediate.csr
 ```
-**Проверка:** Проверьте, что файл `intermediate.csr` создан.
+**Проверка:** Просмотр содержимого CSR.
 ```bash
-ls intermediate.csr
+openssl req -in intermediate.csr -text -noout
 ```
 
 3. Подписываем CSR промежуточного CA с помощью корневого сертификата OpenSSL:
@@ -243,9 +243,10 @@ openssl x509 -req -in intermediate.csr \
   -days 1825 \
   -sha256
 ```
-**Проверка:** Убедитесь, что файл `intermediate.crt` создан.
+**Проверка:** Просмотр краткой информации и проверка цепочки сертификатов.
 ```bash
-ls intermediate.crt
+openssl x509 -in intermediate.crt -subject -issuer -dates -noout
+openssl verify -CAfile rootCA.crt intermediate.crt
 ```
 
 4. Загружаем подписанный сертификат обратно в Vault:
