@@ -46,3 +46,4 @@ vault-helm
 rootCA.crt
 rootCA.key
 default-values.yaml
+diff.txt
