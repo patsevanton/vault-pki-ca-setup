@@ -61,7 +61,7 @@ helm install vault hashicorp/vault --namespace vault --wait --values vault-value
 
 **Проверка:** Дождитесь запуска подов:
 ```bash
-kubectl get pods -n vault -w
+kubectl get pods -n vault
 ```
 
 **1.4. Инициализация и распечатывание Vault:**
