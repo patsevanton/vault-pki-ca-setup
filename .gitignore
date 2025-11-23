@@ -50,3 +50,7 @@ diff.txt
 intermediate.crt
 intermediate.csr
 rootCA.srl
+intermediate_ext.cnf
+intermediateCA.crt
+intermediateCA.key
+intermediateCA.csr
