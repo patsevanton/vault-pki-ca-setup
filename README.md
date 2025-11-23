@@ -56,7 +56,7 @@ ui:
 
 ```bash
 kubectl create namespace vault
-helm install vault hashicorp/vault --namespace vault --values vault-values.yaml
+helm install vault hashicorp/vault --namespace vault --wait --values vault-values.yaml
 ```
 
 **Проверка:** Дождитесь запуска подов:
