@@ -54,3 +54,5 @@ intermediate_ext.cnf
 intermediateCA.crt
 intermediateCA.key
 intermediateCA.csr
+intermediateCA.cnf
+rootCA.cnf
