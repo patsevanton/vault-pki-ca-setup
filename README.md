@@ -2,13 +2,13 @@
 
 ## Обзор
 
-Эта инструкция представляет собой полное руководство по развертыванию отказоустойчивого (High-Availability) экземпляра HashiCorp Vault в кластере Kubernetes. Мы настроим двухуровневую PKI, где **корневой сертификат `apatsev.corp` и промежуточный CA `intermediate.apatsev.corp` создаются через OpenSSL**, а затем импортируются в Vault. Интегрируем систему с `cert-manager` для автоматического выпуска и обновления TLS-сертификатов, включая сертификат для самого Vault.
+Эта инструкция представляет собой полное руководство по развертыванию отказоустойчивого (High-Availability) экземпляра HashiCorp Vault в кластере Kubernetes. Мы настроим двухуровневую PKI, где **корневой сертификат `apatsev.corp` создается через OpenSSL**, а **промежуточный CA `intermediate.apatsev.corp` импортируется и настраивается в Vault**. Интегрируем систему с `cert-manager` для автоматического выпуска и обновления TLS-сертификатов, включая сертификат для самого Vault.
 
 **План:**
 
 1.  **Установка Vault в Kubernetes:** Развертывание отказоустойчивого кластера Vault с использованием Helm-чарта и встроенного хранилища Raft.
 2.  **Создание корневого и промежуточного сертификатов через OpenSSL:** Генерация корневого сертификата `apatsev.corp` и промежуточного CA `intermediate.apatsev.corp` с помощью OpenSSL.
-3.  **Импорт сертификатов в Vault:** Настройка PKI-движков в Vault с использованием предварительно созданных сертификатов с полной конфигурацией URL-адресов.
+3.  **Импорт промежуточного сертификата в Vault:** Настройка PKI-движка в Vault для промежуточного CA с полной конфигурацией URL-адресов.
 4.  **Интеграция с cert-manager:** Установка и настройка `cert-manager` для автоматизации жизненного цикла сертификатов.
 5.  **Выпуск и применение сертификата для Vault:** Использование `cert-manager` для получения TLS-сертификата для Vault от промежуточного CA.
 6.  **Создание ролей и выпуск сертификатов для приложений:** Демонстрация процесса создания ролей для различных сервисов и автоматический выпуск сертификатов для них.
@@ -175,10 +175,10 @@ authorityInfoAccess = @issuer_info
 crlDistributionPoints = @crl_info
 
 [ issuer_info ]
-caIssuers;URI.0 = http://vault.apatsev.corp/v1/pki-root/ca
+caIssuers;URI.0 = http://vault.apatsev.corp/v1/pki/ca
 
 [ crl_info ]
-URI.0 = http://vault.apatsev.corp/v1/pki-root/crl
+URI.0 = http://vault.apatsev.corp/v1/pki/crl
 EOF
 ```
 
@@ -201,12 +201,16 @@ openssl x509 -req -in intermediateCA.csr \
 openssl verify -CAfile rootCA.crt intermediateCA.crt
 ```
 
-### **Шаг 3: Импорт сертификатов в Vault с полной конфигурацией**
+### **Шаг 3: Импорт промежуточного сертификата в Vault с полной конфигурацией**
 
 **3.1. Настройка подключения к Vault:**
 
+Запустите в отдельном окне проброс порта
 ```bash
-kubectl port-forward -n vault service/vault 8200:8200 &
+kubectl port-forward -n vault service/vault 8200:8200
+```
+
+```
 export VAULT_ADDR='http://127.0.0.1:8200'
 export VAULT_TOKEN="${VAULT_ROOT_TOKEN}"
 ```
@@ -216,50 +220,23 @@ export VAULT_TOKEN="${VAULT_ROOT_TOKEN}"
 vault status
 ```
 
-**3.2. Импорт корневого CA в Vault с полной конфигурацией:**
-
-```bash
-# Включаем PKI движок для корневого CA
-vault secrets enable -path=pki-root -description="Apatsev Root PKI" -max-lease-ttl="87600h" pki
-```
-
-# Импортируем корневой сертификат и ключ
-```bash
-vault write pki-root/config/ca pem_bundle="$(cat rootCA.crt rootCA.key)"
-```
-
-**ВАЖНО:** После импорта необходимо настроить URL-адреса для устранения предупреждения:
-
-```bash
-# Настраиваем полную конфигурацию URL-адресов для корневого CA
-vault write pki-root/config/urls \
-    issuing_certificates="http://vault.apatsev.corp/v1/pki-root/ca" \
-    crl_distribution_points="http://vault.apatsev.corp/v1/pki-root/crl" \
-    ocsp_servers="http://vault.apatsev.corp/v1/pki-root/ocsp"
-```
-
-# Перестраиваем CRL чтобы убрать предупреждение
-```bash
-vault write pki-root/crl/rebuild
-```
-
-**3.3. Импорт промежуточного CA в Vault:**
+**3.2. Импорт промежуточного CA в Vault:**
 
 ```bash
 # Включаем PKI движок для промежуточного CA
-vault secrets enable -path=pki-intermediate -description="Apatsev Intermediate PKI" -max-lease-ttl="43800h" pki
+vault secrets enable -path=pki -description="Apatsev Intermediate PKI" -max-lease-ttl="43800h" pki
 ```
 
 # Импортируем промежуточный сертификат и ключ
 ```bash
-vault write pki-intermediate/config/ca pem_bundle="$(cat intermediateCA.crt intermediateCA.key)"
+vault write pki/config/ca pem_bundle="$(cat intermediateCA.crt intermediateCA.key)"
 ```
 
 # Настраиваем URL-адреса для промежуточного CA
 ```bash
-vault write pki-intermediate/config/urls \
-    issuing_certificates="http://vault.apatsev.corp/v1/pki-intermediate/ca" \
-    crl_distribution_points="http://vault.apatsev.corp/v1/pki-intermediate/crl"
+vault write pki/config/urls \
+    issuing_certificates="http://vault.apatsev.corp/v1/pki/ca" \
+    crl_distribution_points="http://vault.apatsev.corp/v1/pki/crl"
 ```
 
 **Проверка:**
@@ -267,11 +244,11 @@ vault write pki-intermediate/config/urls \
 vault secrets list | grep pki
 ```
 
-**3.4. Создание роли для выпуска сертификатов:**
+**3.3. Создание роли для выпуска сертификатов:**
 
 ```bash
-vault write pki-intermediate/roles/k8s-services \
-    allowed_domains="apatsev.corp,svc.cluster.local" \
+vault write pki/roles/k8s-services \
+    allowed_domains="apatsev.corp,svc.cluster.local,vault,vault.vault" \
     allow_subdomains=true \
     max_ttl="8760h" \
     key_bits="2048" \
@@ -280,7 +257,7 @@ vault write pki-intermediate/roles/k8s-services \
     allow_ip_sans=true \
     allow_localhost=true \
     server_flag=true \
-    enforce_hostnames=true \
+    enforce_hostnames=false \
     key_usage="DigitalSignature,KeyEncipherment" \
     ext_key_usage="ServerAuth"
 ```
@@ -292,7 +269,7 @@ vault write pki-intermediate/roles/k8s-services \
 ```bash
 helm repo add jetstack https://charts.jetstack.io
 helm repo update
-helm install cert-manager jetstack/cert-manager \
+helm upgrade --install cert-manager jetstack/cert-manager \
   --namespace cert-manager \
   --create-namespace \
   --version v1.18.2 \
@@ -309,10 +286,10 @@ vault auth enable approle
 # Создаем политику для cert-manager
 ```
 vault policy write cert-manager-policy - <<EOF
-path "pki-intermediate/sign/k8s-services" {
+path "pki/sign/k8s-services" {
   capabilities = ["create", "update"]
 }
-path "pki-intermediate/issue/k8s-services" {
+path "pki/issue/k8s-services" {
   capabilities = ["create"]
 }
 EOF
@@ -358,7 +335,7 @@ metadata:
 spec:
   vault:
     server: http://vault.vault.svc.cluster.local:8200
-    path: pki-intermediate/sign/k8s-services
+    path: pki/sign/k8s-services
     caBundle: $(cat full-chain.crt | base64 | tr -d '\n')
     auth:
       appRole:
@@ -396,9 +373,6 @@ spec:
   commonName: vault.apatsev.corp
   dnsNames:
   - vault.apatsev.corp
-  - vault
-  - vault.vault
-  - vault.vault.svc
   - vault.vault.svc.cluster.local
   - localhost
   ipAddresses:
@@ -525,32 +499,14 @@ kubectl get clusterissuer vault-cluster-issuer -o yaml
 
 ## Решение проблем
 
-**Предупреждение при импорте CA:**
-
-Если при выполнении команды `vault write pki-root/config/ca` появляется предупреждение о нехватке AIA (Authority Information Access) полей:
-
-1. **Обязательно настройте URL-адреса** сразу после импорта:
-   ```bash
-   vault write pki-root/config/urls \
-       issuing_certificates="http://vault.apatsev.corp/v1/pki-root/ca" \
-       crl_distribution_points="http://vault.apatsev.corp/v1/pki-root/crl" \
-       ocsp_servers="http://vault.apatsev.corp/v1/pki-root/ocsp"
-   ```
-
-2. **Перестройте CRL** для устранения предупреждения:
-   ```bash
-   vault write pki-root/crl/rebuild
-   ```
-
-3. Убедитесь, что корневой сертификат имеет правильные расширения `keyUsage = critical, digitalSignature, cRLSign, keyCertSign`
-
 **Если cert-manager не может выпустить сертификаты:**
 
 1. Проверьте логи cert-manager: `kubectl logs -n cert-manager deployment/cert-manager`
 2. Убедитесь, что Secret с secretId существует: `kubectl get secrets -n cert-manager cert-manager-vault-approle`
 3. Проверьте политики Vault: `vault policy read cert-manager-policy`
-4. Проверьте, что все URL-адреса правильно сконфигурированы в PKI-движках
+4. Проверьте, что все URL-адреса правильно сконфигурированы в PKI-движке
+5. Убедитесь, что промежуточный сертификат имеет правильные расширения `keyUsage = critical, digitalSignature, cRLSign, keyCertSign`
 
 ## Заключение
 
-После выполнения всех шагов у вас будет полностью функционирующая PKI-инфраструктура в Kubernetes с HashiCorp Vault в качестве Удостоверяющего Центра и автоматическим управлением сертификатами через cert-manager. Предупреждение о нехватке AIA полей устраняется правильной настройкой URL-адресов для PKI-движков сразу после импорта сертификатов.
+После выполнения всех шагов у вас будет полностью функционирующая PKI-инфраструктура в Kubernetes с HashiCorp Vault в качестве промежуточного Удостоверяющего Центра и автоматическим управлением сертификатами через cert-manager. Корневой сертификат хранится отдельно в файловой системе, что обеспечивает дополнительную безопасность, в то время как промежуточный CA в Vault используется для повседневного выпуска сертификатов.

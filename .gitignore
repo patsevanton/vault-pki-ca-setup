@@ -56,3 +56,4 @@ intermediateCA.key
 intermediateCA.csr
 intermediateCA.cnf
 rootCA.cnf
+full-chain.crt
