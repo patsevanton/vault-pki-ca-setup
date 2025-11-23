@@ -184,8 +184,7 @@ EOF
 
 # Создаем CSR для промежуточного CA
 ```bash
-openssl req -new -key intermediateCA.key -sha256 -days 1825 \
-  -out intermediateCA.csr -config intermediateCA.cnf
+openssl req -new -key intermediateCA.key -out intermediateCA.csr -config intermediateCA.cnf
 ```
 
 # Подписываем промежуточный CA корневым
@@ -540,5 +539,3 @@ kubectl get clusterissuer vault-cluster-issuer -o yaml
 1. Проверьте логи cert-manager: `kubectl logs -n cert-manager deployment/cert-manager`
 2. Убедитесь, что Secret с secretId существует: `kubectl get secrets -n cert-manager cert-manager-vault-approle`
 3. Проверьте политики Vault: `vault policy read cert-manager-policy`
-
-Теперь у вас настроен полностью функциональный Удостоверяющий Центр в Kubernetes с правильной конфигурацией расширений и без предупреждений.
