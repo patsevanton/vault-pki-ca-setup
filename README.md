@@ -71,7 +71,7 @@ kubectl exec -n vault vault-0 -- vault operator init -key-shares=1 -key-threshol
 cat vault-init-keys.json | jq
 ```
 
-**Извлечение ключей:**
+**ПОлучение ключа для разблокировки Vault и root-токен для входа:**
 ```bash
 VAULT_UNSEAL_KEY=$(jq -r ".unseal_keys_b64[0]" vault-init-keys.json)
 VAULT_ROOT_TOKEN=$(jq -r ".root_token" vault-init-keys.json)
@@ -361,7 +361,7 @@ kubectl get clusterissuer vault-cluster-issuer -o wide
 **5.1. Создание ресурса Certificate для Vault:**
 *Ресурс Certificate указывает cert-manager'у выпустить сертификат с заданными параметрами и сохранить его в указанный Secret.*
 ```yaml
-# vault-certificate.yaml
+cat <<EOF > vault-certificate.yaml
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -381,6 +381,7 @@ spec:
   - localhost
   ipAddresses:
   - 127.0.0.1
+EOF
 ```
 
 **Применение манифеста:**
@@ -444,7 +445,7 @@ helm upgrade vault hashicorp/vault --namespace vault -f vault-values.yaml
 **Создание ресурса Certificate для приложения:**
 *Пример создания сертификата для тестового приложения с использованием Wildcard DNS имени.*
 ```yaml
-# my-app-certificate.yaml
+cat <<EOF > my-app-certificate.yaml
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -461,6 +462,7 @@ spec:
   dnsNames:
   - my-app.apatsev.corp
   - "*.apps.apatsev.corp"
+EOF
 ```
 
 **Применение манифестов:**
