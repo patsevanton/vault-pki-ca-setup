@@ -130,13 +130,16 @@ keyUsage = critical, digitalSignature, cRLSign, keyCertSign
 subjectKeyIdentifier = hash
 authorityKeyIdentifier = keyid:always,issuer
 EOF
+```
 
 # Создаем приватный ключ для корневого CA
+```bash
 openssl genrsa -out rootCA.key 4096
+```
 
 # Создаем самоподписанный корневой сертификат
-openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 3650 \
-  -out rootCA.crt -config rootCA.cnf -extensions v3_ca
+```bash
+openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 3650 -out rootCA.crt -config rootCA.cnf -extensions v3_ca
 ```
 
 **Проверка:**
@@ -196,7 +199,6 @@ openssl x509 -req -in intermediateCA.csr \
 ```
 
 Проверяем цепочку сертификатов:
-
 ```bash
 openssl verify -CAfile rootCA.crt intermediateCA.crt
 ```
@@ -210,7 +212,7 @@ openssl verify -CAfile rootCA.crt intermediateCA.crt
 kubectl port-forward -n vault service/vault 8200:8200
 ```
 
-```
+```bash
 export VAULT_ADDR='http://127.0.0.1:8200'
 export VAULT_TOKEN="${VAULT_ROOT_TOKEN}"
 ```
