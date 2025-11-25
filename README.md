@@ -2,31 +2,29 @@
 
 ## Обзор
 
-Эта инструкция представляет собой полное руководство по развертыванию отказоустойчивого (High-Availability) экземпляра HashiCorp Vault в кластере Kubernetes. Мы настроим двухуровневую PKI, где **корневой сертификат `apatsev.corp` создается через OpenSSL**, а **промежуточный CA `intermediate.apatsev.corp` импортируется и настраивается в Vault**. Интегрируем систему с `cert-manager` для автоматического выпуска и обновления TLS-сертификатов, включая сертификат для самого Vault.
+Эта инструкция представляет собой полное руководство по развертыванию отказоустойчивого кластера HashiCorp Vault в Kubernetes и настройке двухуровневой Public Key Infrastructure (PKI). **Корневой сертификат и промежуточный CA  создается через OpenSSL, но промежуточный импортируется и настраивается в Vault** для повседневного выпуска сертификатов. Инфраструктура интегрируется с `cert-manager` для автоматического управления жизненным циклом TLS-сертификатов, включая сертификат для самого Vault.
 
 **План:**
 
 1.  **Установка Vault в Kubernetes:** Развертывание отказоустойчивого кластера Vault с использованием Helm-чарта и встроенного хранилища Raft.
 2.  **Создание корневого и промежуточного сертификатов через OpenSSL:** Генерация корневого сертификата `apatsev.corp` и промежуточного CA `intermediate.apatsev.corp` с помощью OpenSSL.
 3.  **Импорт промежуточного сертификата в Vault:** Настройка PKI-движка в Vault для промежуточного CA с полной конфигурацией URL-адресов.
-4.  **Интеграция с cert-manager:** Установка и настройка `cert-manager` для автоматизации жизненного цикла сертификатов.
+4.  **Интеграция с cert-manager:** Установка и настройка `cert-manager` для автоматизации выпуска и обновления сертификатов.
 5.  **Выпуск и применение сертификата для Vault:** Использование `cert-manager` для получения TLS-сертификата для Vault от промежуточного CA.
-6.  **Создание ролей и выпуск сертификатов для приложений:** Демонстрация процесса создания ролей для различных сервисов и автоматический выпуск сертификатов для них.
+6.  **Создание ролей и выпуск сертификатов для приложений:** Демонстрация процесса создания ролей для различных сервисов и автоматического выпуска сертификатов для них.
 
 ## Предварительные требования
 
-*   Установлен кластер Kubernetes.
-*   Установленные утилиты командной строки: `kubectl`, `helm`, `openssl`.
-*   Настроенный `kubectl` для работы с вашим кластером.
-*   Установленная утилита `jq` для удобной обработки JSON-вывода.
-*   Установленная утилита `vault`.
+*   Рабочий кластер Kubernetes.
+*   Установленные утилиты командной строки: `kubectl`, `helm`, `openssl`, `jq`, `vault`.
+*   Настроенный доступ `kubectl` к целевому кластеру.
 
 ### **Шаг 1: Установка HashiCorp Vault в режиме HA в Kubernetes**
 
-Мы будем использовать официальный Helm-чарт от HashiCorp для развертывания Vault. Конфигурация будет рассчитана на отказоустойчивый режим (HA) с использованием встроенного хранилища Raft.
+Используется официальный Helm-чарт от HashiCorp для развертывания Vault в отказоустойчивом режиме (HA) с использованием встроенного хранилища Raft.
 
 **1.1. Добавление Helm-репозитория HashiCorp:**
-
+*Команда добавляет репозиторий HashiCorp в локальный список источников Helm.*
 ```bash
 helm repo add hashicorp https://helm.releases.hashicorp.com
 helm repo update
@@ -38,9 +36,7 @@ helm repo list | grep hashicorp
 ```
 
 **1.2. Создание файла конфигурации values.yaml:**
-
-Создайте файл `vault-values.yaml` со следующим содержимым:
-
+*Файл конфигурации определяет параметры развертывания Vault: режим HA, количество реплик и бэкенд-хранилище.*
 ```yaml
 server:
   ha:
@@ -53,21 +49,19 @@ ui:
 ```
 
 **1.3. Установка Vault с помощью Helm:**
-
+*Команда создает пространство имен и устанавливает Vault с заданной конфигурацией.*
 ```bash
 kubectl create namespace vault
 helm install vault hashicorp/vault --namespace vault --wait --values vault-values.yaml
 ```
 
-**Проверка:** Дождитесь запуска подов:
+**Проверка:** Дождитесь запуска всех подов.
 ```bash
 kubectl get pods -n vault
 ```
 
 **1.4. Инициализация и распечатывание Vault:**
-
-Инициализируем Vault и сохраняем ключи:
-
+*Инициализация генерирует корневой токен и ключи для распечатывания. Ключи необходимо сохранить в безопасном месте.*
 ```bash
 kubectl exec -n vault vault-0 -- vault operator init -key-shares=1 -key-threshold=1 -format=json > vault-init-keys.json
 ```
@@ -77,14 +71,14 @@ kubectl exec -n vault vault-0 -- vault operator init -key-shares=1 -key-threshol
 cat vault-init-keys.json | jq
 ```
 
-Извлекаем ключи:
+**Извлечение ключей:**
 ```bash
 VAULT_UNSEAL_KEY=$(jq -r ".unseal_keys_b64[0]" vault-init-keys.json)
 VAULT_ROOT_TOKEN=$(jq -r ".root_token" vault-init-keys.json)
 ```
 
-Распечатываем все ноды Vault:
-
+**Распечатывание всех нод Vault:**
+*Процесс распечатывания делает данные Vault доступными. Каждая нода должна быть распечатана.*
 ```bash
 # Распечатываем vault-0
 kubectl exec -n vault vault-0 -- vault operator unseal $VAULT_UNSEAL_KEY
@@ -98,8 +92,7 @@ kubectl exec -n vault vault-2 -- vault operator raft join http://vault-0.vault-i
 kubectl exec -n vault vault-2 -- vault operator unseal $VAULT_UNSEAL_KEY
 ```
 
-Проверяем статус:
-
+**Проверка статуса:**
 ```bash
 kubectl get pods -n vault
 ```
@@ -107,9 +100,10 @@ kubectl get pods -n vault
 ### **Шаг 2: Создание корневого и промежуточного сертификатов через OpenSSL**
 
 **2.1. Создание корневого сертификата через OpenSSL:**
+*Корневой сертификат является корнем доверия всей инфраструктуры. Его закрытый ключ должен храниться в безопасном месте, в идеале — оффлайн.*
 
+**Создание конфигурационного файла для корневого CA:**
 ```bash
-# Создаем конфиг для корневого CA
 cat <<EOF > rootCA.cnf
 [ req ]
 distinguished_name = req_distinguished_name
@@ -132,12 +126,12 @@ authorityKeyIdentifier = keyid:always,issuer
 EOF
 ```
 
-# Создаем приватный ключ для корневого CA
+**Генерация приватного ключа для корневого CA:**
 ```bash
 openssl genrsa -out rootCA.key 4096
 ```
 
-# Создаем самоподписанный корневой сертификат
+**Создание самоподписанного корневого сертификата:**
 ```bash
 openssl req -x509 -new -nodes -key rootCA.key -sha256 -days 3650 -out rootCA.crt -config rootCA.cnf -extensions v3_ca
 ```
@@ -148,13 +142,14 @@ openssl x509 -in rootCA.crt -text -noout | grep "Subject:"
 ```
 
 **2.2. Создание промежуточного сертификата через OpenSSL:**
+*Промежуточный сертификат будет использоваться Vault для ежедневного выпуска сертификатов, что ограничивает риск компрометации корневого ключа.*
 
+**Генерация приватного ключа для промежуточного CA:**
 ```bash
-# Создаем приватный ключ для промежуточного CA
 openssl genrsa -out intermediateCA.key 4096
 ```
 
-# Создаем конфиг для промежуточного CA
+**Создание конфигурационного файла для промежуточного CA:**
 ```bash
 cat <<EOF > intermediateCA.cnf
 [ req ]
@@ -185,12 +180,12 @@ URI.0 = http://vault.apatsev.corp/v1/pki/crl
 EOF
 ```
 
-# Создаем CSR для промежуточного CA
+**Создание CSR (Certificate Signing Request) для промежуточного CA:**
 ```bash
 openssl req -new -key intermediateCA.key -out intermediateCA.csr -config intermediateCA.cnf
 ```
 
-# Подписываем промежуточный CA корневым
+**Подписание промежуточного CA корневым сертификатом:**
 ```bash
 openssl x509 -req -in intermediateCA.csr \
   -CA rootCA.crt -CAkey rootCA.key -CAcreateserial \
@@ -198,7 +193,7 @@ openssl x509 -req -in intermediateCA.csr \
   -extfile intermediateCA.cnf -extensions v3_intermediate_ca
 ```
 
-Проверяем цепочку сертификатов:
+**Проверка цепочки сертификатов:**
 ```bash
 openssl verify -CAfile rootCA.crt intermediateCA.crt
 ```
@@ -206,12 +201,14 @@ openssl verify -CAfile rootCA.crt intermediateCA.crt
 ### **Шаг 3: Импорт промежуточного сертификата в Vault с полной конфигурацией**
 
 **3.1. Настройка подключения к Vault:**
+*Проброс порта позволяет взаимодействовать с Vault, работающим внутри кластера, с локальной машины.*
 
-Запустите в отдельном окне проброс порта
+**Запустите в отдельном окне терминала проброс порта:**
 ```bash
 kubectl port-forward -n vault service/vault 8200:8200
 ```
 
+**Настройка переменных окружения для CLI Vault:**
 ```bash
 export VAULT_ADDR='http://127.0.0.1:8200'
 export VAULT_TOKEN="${VAULT_ROOT_TOKEN}"
@@ -223,18 +220,20 @@ vault status
 ```
 
 **3.2. Импорт промежуточного CA в Vault:**
+*Включение движка PKI и импорт связки сертификата и ключа промежуточного CA.*
 
+**Включение PKI движка:**
 ```bash
-# Включаем PKI движок для промежуточного CA
 vault secrets enable -path=pki -description="Apatsev Intermediate PKI" -max-lease-ttl="43800h" pki
 ```
 
-# Импортируем промежуточный сертификат и ключ
+**Импорт промежуточного сертификата и ключа:**
 ```bash
 vault write pki/config/ca pem_bundle="$(cat intermediateCA.crt intermediateCA.key)"
 ```
 
-# Настраиваем URL-адреса для промежуточного CA
+**Настройка URL-адресов для промежуточного CA:**
+*Эти URL будут указываться в выпускаемых сертификатах для доступа к CA и CRL.*
 ```bash
 vault write pki/config/urls \
     issuing_certificates="http://vault.apatsev.corp/v1/pki/ca" \
@@ -247,7 +246,7 @@ vault secrets list | grep pki
 ```
 
 **3.3. Создание роли для выпуска сертификатов:**
-
+*Роль определяет параметры (домены, TTL, ключи), с которыми могут быть выпущены сертификаты.*
 ```bash
 vault write pki/roles/k8s-services \
     allowed_domains="apatsev.corp,svc.cluster.local,vault,vault.vault" \
@@ -267,7 +266,7 @@ vault write pki/roles/k8s-services \
 ### **Шаг 4: Установка и настройка cert-manager**
 
 **4.1. Установка cert-manager:**
-
+*Установка cert-manager с помощью Helm для автоматического управления сертификатами в Kubernetes.*
 ```bash
 helm repo add jetstack https://charts.jetstack.io
 helm repo update
@@ -279,14 +278,15 @@ helm upgrade --install cert-manager jetstack/cert-manager \
 ```
 
 **4.2. Настройка аутентификации для cert-manager в Vault:**
+*Создание роли AppRole и политики доступа, чтобы cert-manager мог запрашивать сертификаты из Vault.*
 
+**Включение аутентификации AppRole:**
 ```bash
-# Включаем аутентификацию AppRole
 vault auth enable approle
 ```
 
-# Создаем политику для cert-manager
-```
+**Создание политики для cert-manager:**
+```bash
 vault policy write cert-manager-policy - <<EOF
 path "pki/sign/k8s-services" {
   capabilities = ["create", "update"]
@@ -297,8 +297,8 @@ path "pki/issue/k8s-services" {
 EOF
 ```
 
-# Создаем AppRole
-```
+**Создание AppRole:**
+```bash
 vault write auth/approle/role/cert-manager \
     secret_id_ttl=10m \
     token_num_uses=100 \
@@ -308,28 +308,29 @@ vault write auth/approle/role/cert-manager \
     token_policies="cert-manager-policy"
 ```
 
-# Получаем RoleID и SecretID
-```
+**Получение RoleID и SecretID:**
+```bash
 ROLE_ID=$(vault read auth/approle/role/cert-manager/role-id -format=json | jq -r .data.role_id)
 SECRET_ID=$(vault write -f auth/approle/role/cert-manager/secret-id -format=json | jq -r .data.secret_id)
 ```
 
-# Создаем Kubernetes Secret
-```
+**Создание Kubernetes Secret для хранения SecretID:**
+```bash
 kubectl create secret generic cert-manager-vault-approle \
     --namespace=cert-manager \
     --from-literal=secretId="${SECRET_ID}"
 ```
 
 **4.3. Создание VaultIssuer:**
+*ClusterIssuer представляет cert-manager'у точку входа в Vault для запроса сертификатов.*
 
-# Создаем файл с полной цепочкой сертификатов для caBundle
+**Создание файла с полной цепочкой сертификатов для caBundle:**
 ```bash
 cat rootCA.crt intermediateCA.crt > full-chain.crt
 ```
 
-Создаем ClusterIssuer
-```
+**Создание ClusterIssuer:**
+```bash
 cat <<EOF | kubectl apply -f -
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -358,9 +359,9 @@ kubectl get clusterissuer vault-cluster-issuer -o wide
 ### **Шаг 5: Выпуск TLS-сертификата для Vault**
 
 **5.1. Создание ресурса Certificate для Vault:**
-
-```bash
-cat <<EOF > vault-certificate.yaml
+*Ресурс Certificate указывает cert-manager'у выпустить сертификат с заданными параметрами и сохранить его в указанный Secret.*
+```yaml
+# vault-certificate.yaml
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -380,11 +381,10 @@ spec:
   - localhost
   ipAddresses:
   - 127.0.0.1
-EOF
 ```
 
-Применяем
-```
+**Применение манифеста:**
+```bash
 kubectl apply -f vault-certificate.yaml
 ```
 
@@ -395,9 +395,9 @@ kubectl describe certificate vault-server-tls -n vault
 ```
 
 **5.2. Обновление конфигурации Vault для использования TLS:**
+*Обновление конфигурации Helm для перевода Vault на безопасное TLS-соединение с использованием выпущенного сертификата.*
 
-Обновите файл `vault-values.yaml`:
-
+**Обновите файл `vault-values.yaml`:**
 ```yaml
 server:
   ha:
@@ -434,17 +434,17 @@ ui:
     type: ClusterIP
 ```
 
-Примените обновления:
-
+**Применение обновлений:**
 ```bash
 helm upgrade vault hashicorp/vault --namespace vault -f vault-values.yaml
 ```
 
 ### **Шаг 6: Пример выпуска сертификата для приложения**
 
-Создаем Certificate
-```
-cat <<EOF > my-app-certificate.yaml
+**Создание ресурса Certificate для приложения:**
+*Пример создания сертификата для тестового приложения с использованием Wildcard DNS имени.*
+```yaml
+# my-app-certificate.yaml
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -461,19 +461,18 @@ spec:
   dnsNames:
   - my-app.apatsev.corp
   - "*.apps.apatsev.corp"
-EOF
 ```
 
-Применяем
-```
+**Применение манифестов:**
+```bash
 kubectl create namespace apps
 kubectl apply -f my-app-certificate.yaml
 ```
 
 **Проверка:**
 ```bash
-kubectl get certificate my-app-tls
-kubectl describe secret my-app-tls
+kubectl get certificate -n apps my-app-tls
+kubectl describe secret -n apps my-app-tls
 ```
 
 ### **Проверка работы**
@@ -500,11 +499,11 @@ kubectl get clusterissuer vault-cluster-issuer -o yaml
 
 **Если cert-manager не может выпустить сертификаты:**
 
-1. Проверьте логи cert-manager: `kubectl logs -n cert-manager deployment/cert-manager`
-2. Убедитесь, что Secret с secretId существует: `kubectl get secrets -n cert-manager cert-manager-vault-approle`
-3. Проверьте политики Vault: `vault policy read cert-manager-policy`
-4. Проверьте, что все URL-адреса правильно сконфигурированы в PKI-движке
-5. Убедитесь, что промежуточный сертификат имеет правильные расширения `keyUsage = critical, digitalSignature, cRLSign, keyCertSign`
+1.  Проверьте логи cert-manager: `kubectl logs -n cert-manager deployment/cert-manager`
+2.  Убедитесь, что Secret с secretId существует: `kubectl get secrets -n cert-manager cert-manager-vault-approle`
+3.  Проверьте политики Vault: `vault policy read cert-manager-policy`
+4.  Проверьте, что все URL-адреса правильно сконфигурированы в PKI-движке.
+5.  Убедитесь, что промежуточный сертификат имеет правильные расширения `keyUsage = critical, digitalSignature, cRLSign, keyCertSign`.
 
 ## Заключение
 
