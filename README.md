@@ -304,6 +304,7 @@ vault write auth/approle/role/cert-manager \
     token_max_ttl=30m \
     secret_id_num_uses=40 \
     token_policies="cert-manager-policy"
+```
 
 # Получаем RoleID и SecretID
 ```
@@ -320,13 +321,13 @@ kubectl create secret generic cert-manager-vault-approle \
 
 **4.3. Создание VaultIssuer:**
 
-```bash
 # Создаем файл с полной цепочкой сертификатов для caBundle
-```
+```bash
 cat rootCA.crt intermediateCA.crt > full-chain.crt
 ```
 
 Создаем ClusterIssuer
+```
 cat <<EOF | kubectl apply -f -
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -438,10 +439,6 @@ helm upgrade vault hashicorp/vault --namespace vault -f vault-values.yaml
 ```
 
 ### **Шаг 6: Пример выпуска сертификата для приложения**
-
-```bash
-kubectl create namespace apps
-```
 
 Создаем Certificate
 ```
