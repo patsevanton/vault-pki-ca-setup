@@ -28,7 +28,7 @@ resource "yandex_kubernetes_cluster" "vault" {
   network_id = yandex_vpc_network.vault.id  # Сеть, к которой подключается кластер
 
   master {
-    version = "1.30"  # Версия Kubernetes мастера
+    version = "1.32"  # Версия Kubernetes мастера
     zonal {
       zone      = yandex_vpc_subnet.vault-a.zone  # Зона размещения мастера
       subnet_id = yandex_vpc_subnet.vault-a.id     # Подсеть для мастера
@@ -114,11 +114,6 @@ resource "helm_release" "ingress_nginx" {
   namespace        = "ingress-nginx"
   create_namespace = true
   depends_on       = [yandex_kubernetes_cluster.vault]
-
-  set {
-    name  = "controller.service.loadBalancerIP"
-    value = yandex_vpc_address.addr.external_ipv4_address[0].address  # Присвоение внешнего IP ingress-контроллеру
-  }
 }
 
 # Вывод команды для получения kubeconfig
