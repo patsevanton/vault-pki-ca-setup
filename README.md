@@ -43,7 +43,6 @@ helm repo list | grep hashicorp
 server:
   ha:
     enabled: true
-    replicas: 3
     raft:
       enabled: true
 ui:
