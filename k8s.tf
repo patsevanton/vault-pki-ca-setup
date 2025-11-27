@@ -125,3 +125,7 @@ resource "helm_release" "ingress_nginx" {
 output "k8s_cluster_credentials_command" {
   value = "yc managed-kubernetes cluster get-credentials --id ${yandex_kubernetes_cluster.vault.id} --external --force"
 }
+
+output "ip_address" {
+  value = "echo ${yandex_vpc_address.addr.external_ipv4_address[0].address} vault.apatsev.corp >> /etc/hosts"
+}
