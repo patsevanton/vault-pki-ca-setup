@@ -14,7 +14,7 @@
 2.  **Создание корневого и промежуточного сертификатов через OpenSSL:** Генерация корневого сертификата `apatsev.corp` и промежуточного CA `intermediate.apatsev.corp` с помощью OpenSSL.
 3.  **Импорт промежуточного сертификата в Vault:** Настройка PKI-движка в Vault для промежуточного CA.
 4.  **Интеграция с cert-manager:** Установка и настройка `cert-manager` для автоматизации выпуска и обновления сертификатов.
-5.  **Настройка Ingress для Vault:** Конфигурация Ingress-контроллера для безопасного доступа к Vault с TLS-терминацией на Ingress.
+5.  **Настройка Ingress для Vault:** Конфигурация Ingress-контроллера для безопасного доступа к Vault с автоматическим созданием TLS-сертификата через аннотации.
 6.  **Создание ролей и выпуск сертификатов для приложений:** Демонстрация процесса создания ролей для различных сервисов и автоматического выпуска сертификатов для них.
 
 ## Предварительные требования
@@ -364,35 +364,11 @@ EOF
 kubectl get clusterissuer vault-cluster-issuer -o wide
 ```
 
-### **Шаг 5: Настройка Ingress для Vault с TLS-терминацией**
+### **Шаг 5: Настройка Ingress для Vault с автоматическим созданием TLS-сертификата**
 
-**5.1. Создание сертификата для Ingress:**
-```yaml
-cat <<EOF > vault-ingress-certificate.yaml
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: vault-ingress-tls
-  namespace: vault
-spec:
-  secretName: vault-ingress-tls
-  issuerRef:
-    name: vault-cluster-issuer
-    kind: ClusterIssuer
-  duration: 720h
-  renewBefore: 360h
-  commonName: vault.apatsev.corp
-  dnsNames:
-  - vault.apatsev.corp
-EOF
-```
+**5.1. Создание Ingress для Vault с аннотациями cert-manager:**
+*Использование аннотаций позволяет автоматически создать и использовать TLS-сертификат для Vault через cert-manager.*
 
-**Применение манифеста:**
-```bash
-kubectl apply -f vault-ingress-certificate.yaml
-```
-
-**5.2. Создание Ingress для Vault:**
 ```yaml
 cat <<EOF > vault-ingress.yaml
 apiVersion: networking.k8s.io/v1
@@ -400,11 +376,17 @@ kind: Ingress
 metadata:
   name: vault-ingress
   namespace: vault
+  annotations:
+    # Аннотация для автоматического создания TLS-сертификата
+    cert-manager.io/cluster-issuer: vault-cluster-issuer
+    # Дополнительные аннотации для nginx-ingress при необходимости
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 spec:
   tls:
   - hosts:
     - vault.apatsev.corp
-    secretName: vault-ingress-tls
+    secretName: vault-ingress-tls  # cert-manager автоматически создаст этот секрет
   rules:
   - host: vault.apatsev.corp
     http:
@@ -424,8 +406,7 @@ EOF
 kubectl apply -f vault-ingress.yaml
 ```
 
-**5.3. Обновление конфигурации Vault для работы через Ingress:**
-Возможно файл не нужно править
+**5.2. Обновление конфигурации Vault для работы через Ingress:**
 ```yaml
 cat <<EOF > vault-values.yaml
 server:
@@ -518,6 +499,9 @@ kubectl get clusterissuer vault-cluster-issuer -o yaml
 
 # Проверка Ingress
 kubectl get ingress -n vault
+
+# Проверка автоматически созданного сертификата для Vault
+kubectl get certificate -n vault vault-ingress-tls
 ```
 
 ## Решение проблем
@@ -529,11 +513,13 @@ kubectl get ingress -n vault
 3.  Проверьте политики Vault: `vault policy read cert-manager-policy`
 4.  Убедитесь, что Vault доступен изнутри кластера: `kubectl exec -it -n vault vault-0 -- curl http://vault.vault.svc.cluster.local:8200/v1/sys/health`
 
-**Если Ingress не работает:**
+**Если Ingress не работает или сертификат не создается автоматически:**
 
-1.  Проверьте, что Ingress-контроллер работает: `kubectl get pods -n ingress-nginx`
-2.  Убедитесь, что сертификат для Ingress создан: `kubectl get certificate -n vault vault-ingress-tls`
-3.  Проверьте DNS-запись для vault.apatsev.corp
+1.  Проверьте аннотации Ingress: `kubectl get ingress -n vault vault-ingress -o yaml`
+2.  Убедитесь, что cert-manager создал сертификат: `kubectl get certificate -n vault`
+3.  Проверьте события для Ingress: `kubectl describe ingress -n vault vault-ingress`
+4.  Убедитесь, что Ingress-контроллер работает: `kubectl get pods -n ingress-nginx`
+5.  Проверьте DNS-запись для vault.apatsev.corp
 
 ## Заключение
 
@@ -543,6 +529,7 @@ kubectl get ingress -n vault
 
 - Vault работает полностью внутри кластера без внешнего доступа
 - TLS-терминация происходит на Ingress-контроллере, что повышает безопасность
+- Автоматическое создание TLS-сертификатов для Ingress через аннотации cert-manager
 - Корневой сертификат хранится отдельно в файловой системе
 - Автоматическое управление жизненным циклом сертификатов через cert-manager
 - Отказоустойчивый кластер Vault обеспечивает высокую доступность
