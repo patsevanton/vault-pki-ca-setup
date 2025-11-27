@@ -114,6 +114,11 @@ resource "helm_release" "ingress_nginx" {
   namespace        = "ingress-nginx"
   create_namespace = true
   depends_on       = [yandex_kubernetes_cluster.vault]
+
+  set {
+    name  = "controller.service.loadBalancerIP"
+    value = yandex_vpc_address.addr.external_ipv4_address[0].address  # Присвоение внешнего IP ingress-контроллеру
+  }
 }
 
 # Вывод команды для получения kubeconfig
