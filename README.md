@@ -10,11 +10,11 @@
 
 **План:**
 
-1.  **Установка Vault в Kubernetes:** Развертывание отказоустойчивого кластера Vault с использованием Helm-чарта и встроенного хранилища Raft.
+1.  **Установка Vault в Kubernetes:** Развертывание отказоустойчивого кластера Vault с использованием Helm-чарта и встроенного хранилища Raft, с активацией Ingress непосредственно в чарте.
 2.  **Создание корневого и промежуточного сертификатов через OpenSSL:** Генерация корневого сертификата `apatsev.corp` и промежуточного CA `intermediate.apatsev.corp` с помощью OpenSSL.
 3.  **Импорт промежуточного сертификата в Vault:** Настройка PKI-движка в Vault для промежуточного CA.
 4.  **Интеграция с cert-manager:** Установка и настройка `cert-manager` для автоматизации выпуска и обновления сертификатов.
-5.  **Настройка Ingress для Vault:** Конфигурация Ingress-контроллера для безопасного доступа к Vault с автоматическим созданием TLS-сертификата через аннотации.
+5.  **Настройка Ingress для Vault через Helm:** Активация и конфигурация Ingress непосредственно в Helm-чарте Vault для безопасного доступа с автоматическим созданием TLS-сертификата.
 6.  **Создание ролей и выпуск сертификатов для приложений:** Демонстрация процесса создания ролей для различных сервисов и автоматического выпуска сертификатов для них.
 
 ## Предварительные требования
@@ -24,9 +24,9 @@
 *   Настроенный доступ `kubectl` к целевому кластеру.
 *   Установленный и настроенный Ingress-контроллер (например, nginx-ingress).
 
-### **Шаг 1: Установка HashiCorp Vault в режиме HA в Kubernetes**
+### **Шаг 1: Установка HashiCorp Vault в режиме HA в Kubernetes с активацией Ingress**
 
-Используется официальный Helm-чарт от HashiCorp для развертывания Vault в отказоустойчивом режиме (HA) с использованием встроенного хранилища Raft.
+Используется официальный Helm-чарт от HashiCorp для развертывания Vault в отказоустойчивом режиме (HA) с использованием встроенного хранилища Raft и встроенного Ingress.
 
 **1.1. Добавление Helm-репозитория HashiCorp:**
 ```bash
@@ -39,8 +39,8 @@ helm repo update
 helm repo list | grep hashicorp
 ```
 
-**1.2. Создание файла конфигурации values.yaml:**
-*Файл конфигурации определяет параметры развертывания Vault: режим HA, количество реплик и бэкенд-хранилище.*
+**1.2. Создание файла конфигурации values.yaml с активированным Ingress:**
+*Файл конфигурации определяет параметры развертывания Vault: режим HA, количество реплик, бэкенд-хранилище и настройки Ingress.*
 ```yaml
 server:
   ha:
@@ -54,18 +54,39 @@ ui:
   enabled: true
   service:
     type: ClusterIP
+
+# Настройки Ingress
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  annotations:
+    # Аннотация для автоматического создания TLS-сертификата
+    cert-manager.io/cluster-issuer: vault-cluster-issuer
+    # Дополнительные аннотации для nginx-ingress
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+  hosts:
+    - host: vault.apatsev.corp
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: vault-ingress-tls
+      hosts:
+        - vault.apatsev.corp
 ```
 
 **1.3. Установка Vault с помощью Helm:**
-*Команда создает пространство имен и устанавливает Vault с заданной конфигурацией.*
+*Команда создает пространство имен и устанавливает Vault с заданной конфигурацией, включая Ingress.*
 ```bash
 kubectl create namespace vault
 helm install vault hashicorp/vault --namespace vault --wait --values vault-values.yaml
 ```
 
-**Проверка:** Дождитесь запуска всех подов.
+**Проверка:** Дождитесь запуска всех подов и создания Ingress ресурса.
 ```bash
 kubectl get pods -n vault
+kubectl get ingress -n vault
 ```
 
 **1.4. Инициализация и распечатывание Vault:**
@@ -364,49 +385,10 @@ EOF
 kubectl get clusterissuer vault-cluster-issuer -o wide
 ```
 
-### **Шаг 5: Настройка Ingress для Vault с автоматическим созданием TLS-сертификата**
+### **Шаг 5: Обновление конфигурации Vault для работы через Ingress**
 
-**5.1. Создание Ingress для Vault с аннотациями cert-manager:**
-*Использование аннотаций позволяет автоматически создать и использовать TLS-сертификат для Vault через cert-manager.*
-
-```yaml
-cat <<EOF > vault-ingress.yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: vault-ingress
-  namespace: vault
-  annotations:
-    # Аннотация для автоматического создания TLS-сертификата
-    cert-manager.io/cluster-issuer: vault-cluster-issuer
-    # Дополнительные аннотации для nginx-ingress при необходимости
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
-spec:
-  tls:
-  - hosts:
-    - vault.apatsev.corp
-    secretName: vault-ingress-tls  # cert-manager автоматически создаст этот секрет
-  rules:
-  - host: vault.apatsev.corp
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: vault
-            port:
-              number: 8200
-EOF
-```
-
-**Применение манифеста:**
-```bash
-kubectl apply -f vault-ingress.yaml
-```
-
-**5.2. Обновление конфигурации Vault для работы через Ingress:**
+**5.1. Обновление конфигурации Vault для работы через Ingress:**
+*Обновляем values.yaml для корректной работы Vault через Ingress с отключенным TLS.*
 ```yaml
 cat <<EOF > vault-values.yaml
 server:
@@ -433,12 +415,38 @@ ui:
   enabled: true
   service:
     type: ClusterIP
+
+# Настройки Ingress
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  annotations:
+    # Аннотация для автоматического создания TLS-сертификата
+    cert-manager.io/cluster-issuer: vault-cluster-issuer
+    # Дополнительные аннотации для nginx-ingress
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+  hosts:
+    - host: vault.apatsev.corp
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: vault-ingress-tls
+      hosts:
+        - vault.apatsev.corp
 EOF
 ```
 
 **Применение обновлений:**
 ```bash
 helm upgrade vault hashicorp/vault --namespace vault -f vault-values.yaml
+```
+
+**Проверка создания Ingress и сертификата:**
+```bash
+kubectl get ingress -n vault
+kubectl get certificate -n vault
 ```
 
 ### **Шаг 6: Пример выпуска сертификата для приложения**
@@ -515,11 +523,12 @@ kubectl get certificate -n vault vault-ingress-tls
 
 **Если Ingress не работает или сертификат не создается автоматически:**
 
-1.  Проверьте аннотации Ingress: `kubectl get ingress -n vault vault-ingress -o yaml`
+1.  Проверьте аннотации Ingress: `kubectl get ingress -n vault -o yaml`
 2.  Убедитесь, что cert-manager создал сертификат: `kubectl get certificate -n vault`
-3.  Проверьте события для Ingress: `kubectl describe ingress -n vault vault-ingress`
+3.  Проверьте события для Ingress: `kubectl describe ingress -n vault`
 4.  Убедитесь, что Ingress-контроллер работает: `kubectl get pods -n ingress-nginx`
 5.  Проверьте DNS-запись для vault.apatsev.corp
+6.  Убедитесь, что в values.yaml правильно указан ingressClassName
 
 ## Заключение
 
@@ -528,6 +537,7 @@ kubectl get certificate -n vault vault-ingress-tls
 **Ключевые преимущества данной архитектуры:**
 
 - Vault работает полностью внутри кластера без внешнего доступа
+- Ingress активирован непосредственно в Helm-чарте Vault, что упрощает конфигурацию
 - TLS-терминация происходит на Ingress-контроллере, что повышает безопасность
 - Автоматическое создание TLS-сертификатов для Ingress через аннотации cert-manager
 - Корневой сертификат хранится отдельно в файловой системе
