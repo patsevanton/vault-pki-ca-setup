@@ -510,7 +510,7 @@ kubectl get pods -n cert-manager
 kubectl get certificates -A
 
 # Проверка секретов с сертификатами
-kubectl get secrets -n vault vault-server-tls
+kubectl get secrets -n vault vault-ingress-tls
 kubectl get secrets -n apps my-app-tls
 
 # Проверка статуса issuer

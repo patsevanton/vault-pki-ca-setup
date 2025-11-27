@@ -127,5 +127,5 @@ output "k8s_cluster_credentials_command" {
 }
 
 output "ip_address" {
-  value = "echo ${yandex_vpc_address.addr.external_ipv4_address[0].address} vault.apatsev.corp >> /etc/hosts"
+  value = "echo ${yandex_vpc_address.addr.external_ipv4_address[0].address} vault.apatsev.corp | sudo tee -a /etc/hosts"
 }
