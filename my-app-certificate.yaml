@@ -1,0 +1,16 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: my-app-tls
+  namespace: apps
+spec:
+  secretName: my-app-tls
+  issuerRef:
+    name: vault-cluster-issuer
+    kind: ClusterIssuer
+  duration: 720h
+  renewBefore: 360h
+  commonName: my-app.apatsev.corp
+  dnsNames:
+  - my-app.apatsev.corp
+  - "*.apps.apatsev.corp"

@@ -374,6 +374,7 @@ server:
     enabled: true
     annotations:
       cert-manager.io/cluster-issuer: vault-cluster-issuer
+      cert-manager.io/common-name: vault.apatsev.corp
       nginx.ingress.kubernetes.io/ssl-redirect: "true"
       nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     ingressClassName: nginx
@@ -386,7 +387,6 @@ server:
       - secretName: vault-ingress-tls
         hosts:
           - vault.apatsev.corp
-
 ui:
   enabled: true
 EOF
@@ -402,6 +402,14 @@ helm upgrade --install vault hashicorp/vault --namespace vault -f vault-values.y
 kubectl get ingress -n vault
 kubectl get certificate -n vault
 ```
+
+Добавляем vault.apatsev.corp в /etc/hosts
+```
+echo ip-load-balancer vault.apatsev.corp | sudo tee -a /etc/hosts
+```
+
+Открываем и проверяем https://vault.apatsev.corp
+![](check_certificate_in_firefox.png)
 
 ### **Шаг 6: Пример выпуска сертификата для приложения**
 
@@ -439,62 +447,6 @@ kubectl apply -f my-app-certificate.yaml
 kubectl get certificate -n apps my-app-tls
 kubectl describe secret -n apps my-app-tls
 ```
-
-### **Проверка работы**
-
-Убедитесь, что все компоненты работают корректно:
-
-```bash
-# Проверка подов
-kubectl get pods -n vault
-kubectl get pods -n cert-manager
-
-# Проверка сертификатов
-kubectl get certificates -A
-
-# Проверка секретов с сертификатами
-kubectl get secrets -n vault vault-ingress-tls
-kubectl get secrets -n apps my-app-tls
-
-# Проверка статуса issuer
-kubectl get clusterissuer vault-cluster-issuer -o yaml
-
-# Проверка Ingress
-kubectl get ingress -n vault
-
-# Проверка автоматически созданного сертификата для Vault
-kubectl get certificate -n vault vault-ingress-tls
-```
-
-## Решение проблем
-
-**Просмотр default значений чарта HashiCorp Vault**
-Экспортируйте значения по умолчанию чарта Vault в файл default-values.yaml:
-```bash
-helm show values hashicorp/vault | sed -e '/^\s*#/d' -e 's/\s*#.*$//' -e '/^\s*$/d' > default-values.yaml
-```
-
-Удаляем ключи с пустыми значениями
-```bash
-yq -i 'del(.. | select( length == 0))'  default-values.yaml
-sed -i '/{}/d' default-values.yaml
-```
-
-**Если cert-manager не может выпустить сертификаты:**
-
-1.  Проверьте логи cert-manager: `kubectl logs -n cert-manager deployment/cert-manager`
-2.  Убедитесь, что Secret с secretId существует: `kubectl get secrets -n cert-manager cert-manager-vault-approle`
-3.  Проверьте политики Vault: `vault policy read cert-manager-policy`
-4.  Убедитесь, что Vault доступен изнутри кластера: `kubectl exec -it -n vault vault-0 -- curl http://vault.vault.svc.cluster.local:8200/v1/sys/health`
-
-**Если Ingress не работает или сертификат не создается автоматически:**
-
-1.  Проверьте аннотации Ingress: `kubectl get ingress -n vault -o yaml`
-2.  Убедитесь, что cert-manager создал сертификат: `kubectl get certificate -n vault`
-3.  Проверьте события для Ingress: `kubectl describe ingress -n vault`
-4.  Убедитесь, что Ingress-контроллер работает: `kubectl get pods -n ingress-nginx`
-5.  Проверьте DNS-запись для vault.apatsev.corp
-6.  Убедитесь, что в values.yaml правильно указан ingressClassName
 
 ## Заключение
 
