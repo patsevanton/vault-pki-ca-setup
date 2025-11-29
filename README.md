@@ -47,13 +47,8 @@ server:
     enabled: true
     raft:
       enabled: true
-  service:
-    enabled: true
-    type: ClusterIP
 ui:
   enabled: true
-  service:
-    type: ClusterIP
 ```
 
 **1.3. Установка Vault с помощью Helm:**
@@ -66,7 +61,6 @@ helm install vault hashicorp/vault --namespace vault --wait --values vault-value
 **Проверка:** Дождитесь запуска всех подов и создания Ingress ресурса.
 ```bash
 kubectl get pods -n vault
-kubectl get ingress -n vault
 ```
 
 **1.4. Инициализация и распечатывание Vault:**
@@ -279,7 +273,7 @@ vault write pki/roles/k8s-services \
 ```bash
 helm repo add jetstack https://charts.jetstack.io
 helm repo update
-helm upgrade --install cert-manager jetstack/cert-manager \
+helm upgrade --install --wait cert-manager jetstack/cert-manager \
   --namespace cert-manager \
   --create-namespace \
   --version v1.18.2 \
@@ -376,45 +370,25 @@ server:
     enabled: true
     raft:
       enabled: true
-    config: |
-      ui = true
+  ingress:
+    enabled: true
+    annotations:
+      cert-manager.io/cluster-issuer: vault-cluster-issuer
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    ingressClassName: nginx
+    pathType: Prefix
+    hosts:
+      - host: vault.apatsev.corp
+        paths:
+          - /
+    tls:
+      - secretName: vault-ingress-tls
+        hosts:
+          - vault.apatsev.corp
 
-      storage "raft" {
-        path = "/vault/data"
-      }
-
-      listener "tcp" {
-        tls_disable = 1
-        address = "[::]:8200"
-        cluster_address = "[::]:8201"
-      }
-      
-      api_addr = "http://vault.vault.svc.cluster.local:8200"
-      cluster_addr = "https://\${POD_IP}:8201"
 ui:
   enabled: true
-  service:
-    type: ClusterIP
-
-# Настройки Ingress
-ingress:
-  enabled: true
-  ingressClassName: nginx
-  annotations:
-    # Аннотация для автоматического создания TLS-сертификата
-    cert-manager.io/cluster-issuer: vault-cluster-issuer
-    # Дополнительные аннотации для nginx-ingress
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
-  hosts:
-    - host: vault.apatsev.corp
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: vault-ingress-tls
-      hosts:
-        - vault.apatsev.corp
 EOF
 ```
 
