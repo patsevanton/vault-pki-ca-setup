@@ -54,26 +54,6 @@ ui:
   enabled: true
   service:
     type: ClusterIP
-
-# Настройки Ingress
-ingress:
-  enabled: true
-  ingressClassName: nginx
-  annotations:
-    # Аннотация для автоматического создания TLS-сертификата
-    cert-manager.io/cluster-issuer: vault-cluster-issuer
-    # Дополнительные аннотации для nginx-ingress
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
-  hosts:
-    - host: vault.apatsev.corp
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: vault-ingress-tls
-      hosts:
-        - vault.apatsev.corp
 ```
 
 **1.3. Установка Vault с помощью Helm:**
@@ -440,7 +420,7 @@ EOF
 
 **Применение обновлений:**
 ```bash
-helm upgrade vault hashicorp/vault --namespace vault -f vault-values.yaml
+helm upgrade --install vault hashicorp/vault --namespace vault -f vault-values.yaml
 ```
 
 **Проверка создания Ingress и сертификата:**
@@ -513,6 +493,18 @@ kubectl get certificate -n vault vault-ingress-tls
 ```
 
 ## Решение проблем
+
+**Просмотр default значений чарта HashiCorp Vault**
+Экспортируйте значения по умолчанию чарта Vault в файл default-values.yaml:
+```bash
+helm show values hashicorp/vault | sed -e '/^\s*#/d' -e 's/\s*#.*$//' -e '/^\s*$/d' > default-values.yaml
+```
+
+Удаляем ключи с пустыми значениями
+```bash
+yq -i 'del(.. | select( length == 0))'  default-values.yaml
+sed -i '/{}/d' default-values.yaml
+```
 
 **Если cert-manager не может выпустить сертификаты:**
 
