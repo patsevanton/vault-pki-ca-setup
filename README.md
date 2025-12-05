@@ -50,7 +50,8 @@ helm repo list | grep hashicorp
 
 **1.2. Создание файла конфигурации values.yaml с активированным Ingress:**
 *Файл конфигурации определяет параметры развертывания Vault: режим HA, количество реплик, бэкенд-хранилище и настройки Ingress.*
-```yaml
+```bash
+cat <<EOF > vault-values.yaml
 server:
   ha:
     enabled: true
@@ -58,6 +59,7 @@ server:
       enabled: true
 ui:
   enabled: true
+EOF
 ```
 
 **1.3. Установка Vault с помощью Helm:**
